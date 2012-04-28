@@ -7,37 +7,24 @@ import time
 import argparse
 
 import yaml
+
 import ming
-import formencode as fe
-from formencode import validators as fev
-from formencode import schema as fes
+from giza import schema as S
 
 from monq import TaskObject
 
-class KeyedObject(fe.FancyValidator):
-
-    def __init__(self, validator, *args, **kwargs):
-        self._validator = validator
-        super(KeyedObject, self).__init__(*args, **kwargs)
-
-    def _to_python(self, value, state):
-        error_dict = {}
-        result = {}
-        for k,v in value.items():
-            try:
-                result[k] = self._validator.to_python(v, state)
-            except fe.Invalid, inv:
-                import pdb; pdb.set_trace()
-                error_dict[k] = inv
-        if error_dict:
-            msg = '\n'.join('%s:%s' % t for t in error_dict.items())
-            raise fe.Invalid(msg, value, state,
-                          error_dict=error_dict)
-        return result
-
-class ConfigSchema(fes.Schema):
-    ming=KeyedObject(ming.config.DatastoreSchema())
-    poll_interval=fev.Int(if_missing=2)
+schema = S.SchemaItem.make(
+    dict(
+        ming={str:S.FormEncode(ming.config.DatastoreSchema())},
+        poll_interval=int,
+        ew=dict(
+            compress=bool,
+            use_jsmin=bool,
+            use_cssmin=bool,
+            script_name=S.String(if_missing='/_ew_resources/'),
+            url_base=S.String(if_missing='/_ew_resources/'),
+            extra_headers=str),
+        gzip=bool))
 
 def main(config):
     process_name = '%s pid %s' % (os.uname()[1], os.getpid())
@@ -65,6 +52,6 @@ if __name__ == '__main__':
         config = yaml.load(fp.read())
     if args.key:
         config = config[args.key]
-    config = ConfigSchema().to_python(config, None)
+    config = schema.validate(config)
     main(config)
     

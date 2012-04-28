@@ -28,8 +28,7 @@ setup(name='MonQ',
       include_package_data=True,
       zip_safe=False,
       install_requires=[
-        'Ming',
-        'configglue',
+        'Ming'
       ],
       scripts=[
         'scripts/monq'
