@@ -1,0 +1,70 @@
+#!/usr/bin/env python
+'''Simple command-line script to process tasks one after another, polling
+when there are no tasks available to process'''
+import os
+import sys
+import time
+import argparse
+
+import yaml
+import ming
+import formencode as fe
+from formencode import validators as fev
+from formencode import schema as fes
+
+from monq import TaskObject
+
+class KeyedObject(fe.FancyValidator):
+
+    def __init__(self, validator, *args, **kwargs):
+        self._validator = validator
+        super(KeyedObject, self).__init__(*args, **kwargs)
+
+    def _to_python(self, value, state):
+        error_dict = {}
+        result = {}
+        for k,v in value.items():
+            try:
+                result[k] = self._validator.to_python(v, state)
+            except fe.Invalid, inv:
+                import pdb; pdb.set_trace()
+                error_dict[k] = inv
+        if error_dict:
+            msg = '\n'.join('%s:%s' % t for t in error_dict.items())
+            raise fe.Invalid(msg, value, state,
+                          error_dict=error_dict)
+        return result
+
+class ConfigSchema(fes.Schema):
+    ming=KeyedObject(ming.config.DatastoreSchema())
+    poll_interval=fev.Int(if_missing=2)
+
+def main(config):
+    process_name = '%s pid %s' % (os.uname()[1], os.getpid())
+    ming.config.configure_from_nested_dict(config['ming'])
+    poll_interval = config.get('monq.poll_interval', 2)
+    while True:
+        t = TaskObject.get(
+            process_name,
+            waitfunc=lambda: time.sleep(poll_interval))
+        t()
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        description='Process MonQ Tasks')
+    parser.add_argument(
+        'config',
+        help='A yaml config file',
+        default='monq.yml')
+    parser.add_argument(
+        '-k', '--key',
+        help='Key in the config file containing MonQ config',
+        default=None)
+    args = parser.parse_args()
+    with open(args.config, 'rb') as fp:
+        config = yaml.load(fp.read())
+    if args.key:
+        config = config[args.key]
+    config = ConfigSchema().to_python(config, None)
+    main(config)
+    

@@ -1,0 +1,5 @@
+ming:
+  monq: 
+    master: mongodb://localhost:27017
+    database: monq
+poll_interval: 2
