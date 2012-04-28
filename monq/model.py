@@ -1,5 +1,4 @@
 import time
-import logging
 import traceback
 from datetime import datetime
 
@@ -9,8 +8,6 @@ from ming import collection, Session, Field, Index
 from ming import schema as S
 from ming.utils import LazyProperty
 from ming.odm import ThreadLocalODMSession, session
-
-log = logging.getLogger(__name__)
 
 doc_session = Session.by_name('monq')
 odm_session = ThreadLocalODMSession(doc_session)
@@ -100,7 +97,7 @@ class TaskObject(object):
                     sort=sort)
                 if obj is not None: return obj
             except pymongo.errors.OperationFailure, exc:
-                if 'No matching object found' not in exc.args[0]:
+                if 'No matching object found' not in exc.args[0]: #pragma no cover
                     raise
             if waitfunc is None: return None
             waitfunc()
@@ -111,12 +108,19 @@ class TaskObject(object):
         Used to retry 'stuck' tasks.'''
         spec = dict(state='busy')
         spec['time.start'] = {'$lt':older_than}
-        cls.query.update(spec, {'$set': dict(state='ready')}, multi=True)
+        cls.query.update(
+            spec,
+            {'$set': dict(
+                    process=None,
+                    state='ready')},
+            multi=True)
 
     @classmethod
     def clear_complete(cls):
         '''Delete the task objects for complete tasks'''
-        cls.query.remove(dict(state='complete'))
+        cls.query.remove(dict(
+                result_type='forget',
+                state='complete'))
 
     @classmethod
     def run_ready(cls, worker=None):
@@ -132,22 +136,14 @@ class TaskObject(object):
         '''Call the task function with its arguments.'''
         self.time_start = datetime.utcnow()
         session(self).flush(self)
-        log.info('%r', self)
         try:
             func = self.function
-            self.result = func(*self.args, **self.kwargs)
+            self.result = func(*self.task.args, **self.task.kwargs)
             self.state = 'complete'
-            if self.result_type == 'forget':
-                self.query.delete()
             return self.result
-        except Exception, exc:
-            log.exception('%r', self)
+        except Exception:
             self.state = 'error'
-            if hasattr(exc, 'format_error'):
-                self.result = exc.format_error()
-                log.error(self.result)
-            else:
-                self.result = traceback.format_exc()
+            self.result = traceback.format_exc()
             raise
         finally:
             self.time_stop = datetime.utcnow()
@@ -159,7 +155,9 @@ class TaskObject(object):
         while self.state not in ('complete', 'error'):
             time.sleep(poll_interval)
             self.query.find(dict(_id=self._id), refresh=True).first()
-        return self.result
+        result = self.result
+        self.query.delete()
+        return result
 
     @classmethod
     def list(cls, state='ready'):
