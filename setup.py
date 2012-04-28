@@ -18,7 +18,7 @@ setup(name='MonQ',
       include_package_data=True,
       zip_safe=False,
       install_requires=[
-          # -*- Extra requirements: -*-
+        'Ming',
       ],
       entry_points="""
       # -*- Entry points: -*-
